@@ -1,107 +1,117 @@
 // src/gemini.ts
-import { GoogleGenerativeAI, GenerativeModel } from "@google/generative-ai";
+// ----------------------------------------------------
+// Gemini helpers for image background removal & enhance
+// ----------------------------------------------------
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const apiKey = import.meta.env.VITE_API_KEY;
+// 1) API key from env (Vercel → Environment Variables)
+const apiKey = import.meta.env.VITE_API_KEY as string | undefined;
 if (!apiKey) {
-  throw new Error("VITE_API_KEY is missing. Add it in Vercel → Environment Variables.");
+  throw new Error(
+    "VITE_API_KEY is missing. Add it in Vercel → Project → Settings → Environment Variables."
+  );
 }
 
+// 2) Create client + pick a model that accepts image inputs
+// جرّب "gemini-2.5-flash" إن تبي الأحدث، لكن سنبقيه افتراضيًا على 2.0-flash
 const genAI = new GoogleGenerativeAI(apiKey);
+const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
-// ـــ أدوات مساعدة ـــ
+// ---------- small helpers ----------
 function dataUrlToInfo(dataUrl: string): { base64: string; mimeType: string } {
   const [meta, base64] = dataUrl.split(",");
-  if (!base64) throw new Error("Invalid data URL");
+  if (!base64) throw new Error("Invalid data URL: missing base64 part.");
   const mimeType = meta.match(/data:(.*?);base64/)?.[1] || "image/png";
-  return { base64, mimeType };
+  return { base64: base64.trim(), mimeType };
 }
 
-function base64ToFile(b64: string, mime: string, name = "output.png") {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return new File([bytes], name, { type: mime });
+function cleanBase64(text: string): string {
+  // أحيانًا النماذج ترجع النص بين ``` أو مع أسطر إضافية — ننظفه
+  let t = text.trim();
+  t = t.replace(/^```(png|image|base64)?/i, "").replace(/```$/i, "").trim();
+  // خذ أول سطر يشبه base64 إذا فيه شرح
+  const base64Match = t.match(/[A-Za-z0-9+/=]{100,}/);
+  return base64Match ? base64Match[0] : t;
 }
 
-function pickInlineImage(resp: any) {
-  return resp?.candidates?.[0]?.content?.parts?.find((p: any) => p?.inlineData)?.inlineData;
+function toDataUrlPNG(base64: string): string {
+  return `data:image/png;base64,${base64}`;
 }
 
-// ـــ إزالة الخلفية ـــ
+async function callModelWithImage(
+  imageDataUrl: string,
+  instruction: string
+): Promise<string> {
+  const { base64, mimeType } = dataUrlToInfo(imageDataUrl);
+
+  const result = await model.generateContent({
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { inlineData: { data: base64, mimeType } },
+          {
+            text:
+              `${instruction}\n\n` +
+              // نطلب صراحة إرجاع base64 فقط بدون أي زيادات
+              "Return ONLY the resulting PNG image as BASE64 string. " +
+              "Do NOT include markdown, code fences, JSON, or any extra text."
+          }
+        ]
+      }
+    ],
+    // مهم: لا نطلب image/png مباشرة لأن بعض الإصدارات لا تدعمها → 400
+    generationConfig: { responseMimeType: "text/plain" }
+  });
+
+  const text = (await result.response.text()) ?? "";
+  const b64 = cleanBase64(text);
+  if (!b64 || b64.length < 100) {
+    throw new Error("Model did not return a valid base64 image.");
+  }
+  return toDataUrlPNG(b64);
+}
+
+// ---------- Public API ----------
+
+/**
+ * يزيل الخلفية ويُرجع DataURL للصورة الناتجة (PNG base64).
+ * @param imageDataUrl data:image/*;base64,....
+ */
 export async function removeBackground(
   imageDataUrl: string
-): Promise<{ dataUrl: string; file: File }> {
-  const { base64, mimeType } = dataUrlToInfo(imageDataUrl);
-
-  // مهم: استخدم موديل يدعم مخرجات صورة
-  const model: GenerativeModel = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash-image-preview", // يعمل لإخراج IMAGE
-    // ملاحظة: لو حسابك ما يفعّل هذا الموديل جرّب "gemini-2.0-flash-exp" أو الأقرب المتاح
-  });
-
-  const prompt =
-    "Remove the background. Return only the subject on a fully transparent background (PNG).";
-
-  const res = await model.generateContent({
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { inlineData: { data: base64, mimeType } },
-          { text: prompt },
-        ],
-      },
-    ],
-    generationConfig: {
-      // نطلب صورة في المخرجات
-      responseMimeType: "image/png",
-    },
-  });
-
-  const img = pickInlineImage(res.response);
-  if (!img) throw new Error("API did not return an image.");
-
-  const outMime = img.mimeType || "image/png";
-  const outDataUrl = `data:${outMime};base64,${img.data}`;
-  const file = base64ToFile(img.data, outMime, "removed-bg.png");
-
-  return { dataUrl: outDataUrl, file };
+): Promise<{ dataUrl: string }> {
+  try {
+    const dataUrl = await callModelWithImage(
+      imageDataUrl,
+      "Remove the background from this image. Keep the subject only on a transparent background (PNG)."
+    );
+    return { dataUrl };
+  } catch (err: any) {
+    const msg =
+      err?.message ||
+      "Failed to remove background. Please try again with a different image.";
+    throw new Error(msg);
+  }
 }
 
-// ـــ تحسين الجودة/الوضوح (Upscale + Denoise + Sharpen) ـــ
+/**
+ * يحسّن الجودة (إزالة تشويش/حدة/ترقية خفيفة) ويُرجع DataURL (PNG base64).
+ * @param imageDataUrl data:image/*;base64,....
+ */
 export async function enhanceQuality(
   imageDataUrl: string
-): Promise<{ dataUrl: string; file: File }> {
-  const { base64, mimeType } = dataUrlToInfo(imageDataUrl);
-
-  const model: GenerativeModel = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash-image-preview",
-  });
-
-  const prompt =
-    "Enhance this image: upscale 2x, reduce noise, improve sharpness and details while keeping natural look. Return PNG.";
-
-  const res = await model.generateContent({
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { inlineData: { data: base64, mimeType } },
-          { text: prompt },
-        ],
-      },
-    ],
-    generationConfig: {
-      responseMimeType: "image/png",
-    },
-  });
-
-  const img = pickInlineImage(res.response);
-  if (!img) throw new Error("API did not return an image.");
-
-  const outMime = img.mimeType || "image/png";
-  const outDataUrl = `data:${outMime};base64,${img.data}`;
-  const file = base64ToFile(img.data, outMime, "enhanced.png");
-
-  return { dataUrl: outDataUrl, file };
+): Promise<{ dataUrl: string }> {
+  try {
+    const dataUrl = await callModelWithImage(
+      imageDataUrl,
+      "Enhance this image quality: denoise, sharpen edges, improve clarity, slightly upscale if beneficial, then output as high-quality PNG."
+    );
+    return { dataUrl };
+  } catch (err: any) {
+    const msg =
+      err?.message ||
+      "Failed to enhance image. Please try again with a different image.";
+    throw new Error(msg);
+  }
 }
