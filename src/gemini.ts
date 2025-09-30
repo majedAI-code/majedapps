@@ -1,7 +1,7 @@
 // src/gemini.ts
 import { GoogleGenerativeAI, GenerativeModel } from "@google/generative-ai";
 
-const apiKey = import.meta.env.VITE_API_KEY=AIzaSyDPXaXwxtIQCuwGIsxMXs5fKPoM8O1WqUY
+const apiKey = import.meta.env.VITE_API_KEY;
 if (!apiKey) {
   throw new Error("VITE_API_KEY is missing. Add it in Vercel → Environment Variables.");
 }
