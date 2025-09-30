@@ -1,319 +1,229 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { Language } from '../types';
-import { translations } from '../constants';
-import { removeBackground, enhanceQuality, generateResizeCode } from '../gemini';
-import CodeBlock from './CodeBlock';
+import React, { useRef, useState } from "react";
+import { removeBackground, enhanceQuality } from "../gemini";
 
-interface ImageResizerProps {
-  language: Language;
-}
+type Props = {
+  language: string;
+  originalImage: string | null;
+  setOriginalImage: (v: string | null) => void;
+  modifiedImage: string | null;
+  setModifiedImage: (v: string | null) => void;
+  width: number;
+  setWidth: (n: number) => void;
+  height: number;
+  setHeight: (n: number) => void;
+};
 
-const ImageResizer: React.FC<ImageResizerProps> = ({ language }) => {
-  const t = translations[language];
-  const [originalFile, setOriginalFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [resizedUrl, setResizedUrl] = useState<string | null>(null);
-  const [width, setWidth] = useState('');
-  const [height, setHeight] = useState('');
-  const [isResizing, setIsResizing] = useState(false);
-  const [isRemovingBg, setIsRemovingBg] = useState(false);
-  const [isEnhancing, setIsEnhancing] = useState(false);
+const ImageResizer: React.FC<Props> = ({
+  language,
+  originalImage,
+  setOriginalImage,
+  modifiedImage,
+  setModifiedImage,
+  width,
+  setWidth,
+  height,
+  setHeight,
+}) => {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pythonCode, setPythonCode] = useState<string>('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  const anyProcessing = isResizing || isRemovingBg || isEnhancing;
 
-  const handleFileChange = (file: File | null) => {
-    if (file && file.type.startsWith('image/')) {
-      setOriginalFile(file);
+  // — رفع صورة —
+  const onPickImage = () => fileInputRef.current?.click();
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setOriginalImage(reader.result as string);
+      setModifiedImage(null);
       setError(null);
-      setResizedUrl(null);
-      setPythonCode('');
-      
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const url = e.target?.result as string;
-        setPreviewUrl(url);
-        const img = new Image();
-        img.onload = () => {
-          setWidth(String(img.width));
-          setHeight(String(img.height));
-        };
-        img.src = url;
-      };
-      reader.readAsDataURL(file);
-    } else {
-        setOriginalFile(null);
-        setPreviewUrl(null);
-    }
+    };
+    reader.readAsDataURL(f);
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    handleFileChange(file || null);
-  };
-  
-  const handleDrop = (e: React.DragEvent<HTMLLabelElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const file = e.dataTransfer.files?.[0];
-    handleFileChange(file || null);
-  };
-    
-  const handleDragOver = (e: React.DragEvent<HTMLLabelElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleNewImage = () => {
-    setOriginalFile(null);
-    setPreviewUrl(null);
-    setResizedUrl(null);
-    setPythonCode('');
-    setWidth('');
-    setHeight('');
-    setError(null);
-    if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-    }
-  };
-
-  const handleResize = useCallback(async () => {
-    if (!originalFile || !previewUrl) {
-      setError(t.errorNoImage);
-      return;
-    }
-
-    const numWidth = parseInt(width, 10);
-    const numHeight = parseInt(height, 10);
-
-    if (isNaN(numWidth) || isNaN(numHeight) || numWidth <= 0 || numHeight <= 0) {
-      setError(t.errorInvalidDims);
-      return;
-    }
-
-    setError(null);
-    setIsResizing(true);
-    setResizedUrl(null);
-    setPythonCode('');
-
+  // — إزالة الخلفية عبر Gemini —
+  const handleRemoveBg = async () => {
+    if (!originalImage) return;
     try {
-        const resizePromise = new Promise<string>((resolve, reject) => {
-            const img = new Image();
-            img.src = previewUrl;
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                canvas.width = numWidth;
-                canvas.height = numHeight;
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                    ctx.drawImage(img, 0, 0, numWidth, numHeight);
-                    const dataUrl = canvas.toDataURL(originalFile.type);
-                    resolve(dataUrl);
-                } else {
-                    reject(new Error("Failed to get canvas context."));
-                }
-            };
-            img.onerror = () => {
-                reject(new Error("Failed to load image for resizing."));
-            }
-        });
-
-        const dataUrl = await resizePromise;
-        setResizedUrl(dataUrl);
-
-        const code = await generateResizeCode(originalFile.name, numWidth, numHeight);
-        setPythonCode(code);
-
-    } catch (err: any) {
-        setError(err.message || "An unexpected error occurred during resize.");
-        setResizedUrl(null);
-        setPythonCode('');
+      setLoading(true);
+      setError(null);
+      const { dataUrl } = await removeBackground(originalImage);
+      setModifiedImage(dataUrl);
+    } catch (e: any) {
+      setError(e?.message || "فشل في إزالة الخلفية. يرجى المحاولة مرة أخرى.");
     } finally {
-        setIsResizing(false);
-    }
-  }, [originalFile, previewUrl, width, height, t]);
-  
-  const handleRemoveBackground = async () => {
-    if (!previewUrl || !originalFile) {
-        setError(t.errorNoImage);
-        return;
-    }
-
-    setError(null);
-    setIsRemovingBg(true);
-
-    try {
-        const { dataUrl: newImageDataUrl, file: newFile } = await removeBackground(previewUrl);
-        
-        setPreviewUrl(newImageDataUrl);
-        setOriginalFile(newFile);
-        
-        const img = new Image();
-        img.onload = () => {
-            setWidth(String(img.width));
-            setHeight(String(img.height));
-        };
-        img.src = newImageDataUrl;
-
-        setResizedUrl(null);
-        setPythonCode('');
-    } catch (error) {
-        console.error(error);
-        setError(t.errorRemoveBg);
-    } finally {
-        setIsRemovingBg(false);
+      setLoading(false);
     }
   };
 
-  const handleEnhanceQuality = async () => {
-    if (!previewUrl || !originalFile) {
-        setError(t.errorNoImage);
-        return;
-    }
-
-    setError(null);
-    setIsEnhancing(true);
-
+  // — تحسين الجودة عبر Gemini —
+  const handleEnhance = async () => {
+    if (!originalImage) return;
     try {
-        const { dataUrl: newImageDataUrl, file: newFile } = await enhanceQuality(previewUrl);
-        
-        setPreviewUrl(newImageDataUrl);
-        setOriginalFile(newFile);
-        
-        const img = new Image();
-        img.onload = () => {
-            setWidth(String(img.width));
-            setHeight(String(img.height));
-        };
-        img.src = newImageDataUrl;
-
-        setResizedUrl(null);
-        setPythonCode('');
-    } catch (error) {
-        console.error(error);
-        setError(t.errorEnhance);
+      setLoading(true);
+      setError(null);
+      const { dataUrl } = await enhanceQuality(originalImage);
+      setModifiedImage(dataUrl);
+    } catch (e: any) {
+      setError(e?.message || "فشل في تحسين الصورة. يرجى المحاولة مرة أخرى.");
     } finally {
-        setIsEnhancing(false);
+      setLoading(false);
     }
   };
 
+  // — تغيير الحجم (محليًا في المتصفح) —
+  const handleResize = async () => {
+    if (!originalImage) return;
+    try {
+      setLoading(true);
+      setError(null);
+
+      const img = new Image();
+      img.src = originalImage;
+      await img.decode();
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas not supported.");
+
+      ctx.drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL("image/png");
+      setModifiedImage(dataUrl);
+    } catch (e: any) {
+      setError(e?.message || "فشل في تغيير الحجم.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // — تنزيل الصورة المعدّلة —
+  const handleDownload = () => {
+    if (!modifiedImage) return;
+    const a = document.createElement("a");
+    a.href = modifiedImage;
+    a.download = "edited.png";
+    a.click();
+  };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
-      
-      {error && <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-md mb-6 text-center">{error}</div>}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Left Column: Controls & Original Image */}
-        <div className="flex flex-col gap-6">
-          <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
-            <h2 className="text-lg font-semibold text-cyan-400 mb-4">{t.original}</h2>
-            
-            {!previewUrl ? (
-                <label 
-                    className="flex flex-col items-center justify-center w-full h-64 border-2 border-slate-600 border-dashed rounded-lg cursor-pointer bg-slate-800/50 hover:bg-slate-700/50 transition-colors"
-                    onDrop={handleDrop}
-                    onDragOver={handleDragOver}
-                    >
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                        <svg className="w-8 h-8 mb-4 text-slate-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
-                            <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
-                        </svg>
-                        <p className="mb-2 text-sm text-slate-400"><span className="font-semibold text-cyan-400">{t.uploadImage}</span> {t.orDrop}</p>
-                        <p className="text-xs text-slate-500">PNG, JPG, GIF, WEBP</p>
-                    </div>
-                    <input ref={fileInputRef} id="dropzone-file" type="file" className="hidden" accept="image/*" onChange={handleFileSelect} />
-                </label>
-            ) : (
-                <div className="w-full">
-                    <div className="p-2 border border-slate-700 rounded-lg bg-black/20">
-                      <img src={previewUrl} alt="Original" className="w-full h-auto max-h-80 object-contain rounded-md" />
-                    </div>
-                    <button onClick={handleNewImage} disabled={anyProcessing} className="mt-4 w-full bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-4 rounded-md transition-all disabled:bg-slate-700 disabled:cursor-not-allowed">
-                      {t.useNewImage}
-                    </button>
-                </div>
-            )}
-          </div>
-
-          {previewUrl && (
-            <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label htmlFor="width" className="block text-sm font-medium text-slate-400 mb-1">{t.width}</label>
-                  <input type="number" id="width" value={width} onChange={(e) => setWidth(e.target.value)} className="w-full bg-slate-700 border border-slate-600 rounded-md px-3 py-2 focus:ring-2 focus:ring-cyan-500 focus:outline-none" />
-                </div>
-                <div>
-                  <label htmlFor="height" className="block text-sm font-medium text-slate-400 mb-1">{t.height}</label>
-                  <input type="number" id="height" value={height} onChange={(e) => setHeight(e.target.value)} className="w-full bg-slate-700 border border-slate-600 rounded-md px-3 py-2 focus:ring-2 focus:ring-cyan-500 focus:outline-none" />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <button onClick={handleResize} disabled={anyProcessing} className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 px-4 rounded-md transition-all flex items-center justify-center disabled:bg-slate-600 disabled:cursor-not-allowed sm:col-span-2">
-                  {isResizing ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Processing...
-                    </>
-                  ) : t.resize}
-                </button>
-                 <button onClick={handleRemoveBackground} disabled={anyProcessing} className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-4 rounded-md transition-all flex items-center justify-center disabled:bg-slate-600 disabled:cursor-not-allowed">
-                  {isRemovingBg ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      {t.removing}
-                    </>
-                  ) : t.removeBackground}
-                </button>
-                <button onClick={handleEnhanceQuality} disabled={anyProcessing} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-md transition-all flex items-center justify-center disabled:bg-slate-600 disabled:cursor-not-allowed">
-                  {isEnhancing ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      {t.enhancing}
-                    </>
-                  ) : t.enhanceQuality}
-                </button>
-              </div>
-            </div>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* المعدّلة */}
+      <section className="bg-slate-800/60 rounded-xl p-4 border border-slate-700">
+        <h2 className="text-center text-cyan-300 mb-3">
+          {language === "ar" ? "الصورة المعدلة" : "Edited Image"}
+        </h2>
+        <div className="aspect-video bg-slate-900/60 rounded-lg border border-slate-700 flex items-center justify-center overflow-hidden">
+          {modifiedImage ? (
+            <img src={modifiedImage} alt="edited" className="w-full h-full object-contain" />
+          ) : (
+            <span className="text-slate-500">
+              {language === "ar" ? "ستظهر الصورة المعدلة هنا" : "Edited image will appear here"}
+            </span>
           )}
         </div>
 
-        {/* Right Column: Resized Image & Code */}
-        <div className="flex flex-col gap-6">
-            <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 flex-grow flex flex-col">
-                <h2 className="text-lg font-semibold text-cyan-400 mb-4">{t.resized}</h2>
-                <div className="flex-grow flex items-center justify-center w-full min-h-[20rem] bg-black/20 p-2 border border-slate-700 rounded-lg">
-                    {resizedUrl ? (
-                        <img src={resizedUrl} alt="Resized" className="w-full h-auto max-h-80 object-contain rounded-md" />
-                    ) : (
-                        <p className="text-slate-500">{t.noResizedImage}</p>
-                    )}
-                </div>
-                {resizedUrl && (
-                    <a href={resizedUrl} download={`resized-${originalFile?.name || 'image.png'}`} className="mt-4 w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-4 rounded-md transition-all text-center">
-                        {t.download}
-                    </a>
-                )}
-            </div>
-            {pythonCode && (
-              <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
-                <h2 className="text-lg font-semibold text-cyan-400 mb-4">{t.pythonCode}</h2>
-                <CodeBlock code={pythonCode} copyText={t.copy} copiedText={t.copied} />
-              </div>
-            )}
+        <div className="mt-3">
+          <button
+            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 py-2 rounded-md"
+            onClick={handleDownload}
+            disabled={!modifiedImage}
+          >
+            {language === "ar" ? "تحميل الصورة المعدلة" : "Download"}
+          </button>
         </div>
-      </div>
+      </section>
+
+      {/* الأصلية + الأدوات */}
+      <section className="bg-slate-800/60 rounded-xl p-4 border border-slate-700">
+        <h2 className="text-center text-cyan-300 mb-3">
+          {language === "ar" ? "الصورة الأصلية" : "Original Image"}
+        </h2>
+
+        <div className="aspect-video bg-slate-900/60 rounded-lg border border-slate-700 overflow-hidden">
+          {originalImage ? (
+            <img src={originalImage} alt="original" className="w-full h-full object-contain" />
+          ) : null}
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 gap-2">
+          <button className="bg-slate-600 hover:bg-slate-700 py-2 rounded-md" onClick={onPickImage}>
+            {language === "ar" ? "استخدام صورة جديدة" : "Choose Image"}
+          </button>
+          <input
+            type="file"
+            accept="image/*"
+            ref={fileInputRef}
+            onChange={onFileChange}
+            hidden
+          />
+        </div>
+
+        {/* المقاسات */}
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="flex flex-col">
+            <label className="text-sm mb-1">{language === "ar" ? "العرض (بكسل)" : "Width (px)"}</label>
+            <input
+              className="bg-slate-900/70 border border-slate-700 rounded-md px-3 py-2"
+              type="number"
+              value={width}
+              onChange={(e) => setWidth(Number(e.target.value))}
+            />
+          </div>
+          <div className="flex flex-col">
+            <label className="text-sm mb-1">
+              {language === "ar" ? "الارتفاع (بكسل)" : "Height (px)"}
+            </label>
+            <input
+              className="bg-slate-900/70 border border-slate-700 rounded-md px-3 py-2"
+              type="number"
+              value={height}
+              onChange={(e) => setHeight(Number(e.target.value))}
+            />
+          </div>
+        </div>
+
+        {/* الأزرار */}
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <button
+            className="bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 py-2 rounded-md"
+            onClick={handleResize}
+            disabled={loading || !originalImage}
+          >
+            {language === "ar" ? "تغيير الحجم" : "Resize"}
+          </button>
+
+          <button
+            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 py-2 rounded-md"
+            onClick={handleEnhance}
+            disabled={loading || !originalImage}
+          >
+            {language === "ar" ? "تحسين الجودة" : "Enhance"}
+          </button>
+
+          <button
+            className="bg-fuchsia-600 hover:bg-fuchsia-700 disabled:opacity-50 py-2 rounded-md"
+            onClick={handleRemoveBg}
+            disabled={loading || !originalImage}
+          >
+            {language === "ar" ? "إزالة الخلفية" : "Remove BG"}
+          </button>
+        </div>
+
+        {/* حالات */}
+        {loading && (
+          <div className="mt-3 text-center text-sm text-slate-400">
+            {language === "ar" ? "جاري المعالجة..." : "Processing..."}
+          </div>
+        )}
+        {error && (
+          <div className="mt-3 bg-rose-800/50 text-rose-100 border border-rose-700 rounded-md px-3 py-2 text-sm">
+            {error}
+          </div>
+        )}
+      </section>
     </div>
   );
 };
