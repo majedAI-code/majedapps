@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { Language } from './types';
-import Header from './components/Header';
-import ImageResizer from './components/ImageResizer';
+import Header from './Header';
+import ImageResizer from './ImageResizer';
 
 const App: React.FC = () => {
   const [language, setLanguage] = useState<Language>(Language.AR);
