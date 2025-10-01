@@ -26,10 +26,6 @@ export const translations = {
     enhanceQuality: "Enhance Quality",
     enhancing: "Enhancing...",
     errorEnhance: "Failed to enhance image. Please try again.",
-    // FIX: Add missing translation keys for Python code block
-    pythonCode: "Python Code",
-    copy: "Copy",
-    copied: "Copied!",
   },
   [Language.AR]: {
     title: "تغيير وتعديل الصور",
@@ -56,9 +52,5 @@ export const translations = {
     enhanceQuality: "تحسين الجودة",
     enhancing: "جارٍ التحسين...",
     errorEnhance: "فشل في تحسين الصورة. يرجى المحاولة مرة أخرى.",
-    // FIX: Add missing translation keys for Python code block
-    pythonCode: "كود بايثون",
-    copy: "نسخ",
-    copied: "تم النسخ!",
   }
 };

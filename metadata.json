@@ -1,5 +1,0 @@
-{
-  "name": "resize photo -ma",
-  "description": "An application to resize images and generate the corresponding Python code using the Pillow library. It supports both English and Arabic interfaces.",
-  "requestFramePermissions": []
-}

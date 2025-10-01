@@ -1,8 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { Language } from '../types';
 import { translations } from '../constants';
-import { removeBackground, enhanceQuality, generateResizeCode } from '../gemini';
-import CodeBlock from './CodeBlock';
+import { removeBackground, enhanceQuality } from '../gemini';
 
 interface ImageResizerProps {
   language: Language;
@@ -13,13 +12,13 @@ const ImageResizer: React.FC<ImageResizerProps> = ({ language }) => {
   const [originalFile, setOriginalFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [resizedUrl, setResizedUrl] = useState<string | null>(null);
+  const [downloadFilename, setDownloadFilename] = useState<string>('');
   const [width, setWidth] = useState('');
   const [height, setHeight] = useState('');
   const [isResizing, setIsResizing] = useState(false);
   const [isRemovingBg, setIsRemovingBg] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pythonCode, setPythonCode] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const anyProcessing = isResizing || isRemovingBg || isEnhancing;
@@ -29,7 +28,7 @@ const ImageResizer: React.FC<ImageResizerProps> = ({ language }) => {
       setOriginalFile(file);
       setError(null);
       setResizedUrl(null);
-      setPythonCode('');
+      setDownloadFilename('');
       
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -70,7 +69,7 @@ const ImageResizer: React.FC<ImageResizerProps> = ({ language }) => {
     setOriginalFile(null);
     setPreviewUrl(null);
     setResizedUrl(null);
-    setPythonCode('');
+    setDownloadFilename('');
     setWidth('');
     setHeight('');
     setError(null);
@@ -96,7 +95,6 @@ const ImageResizer: React.FC<ImageResizerProps> = ({ language }) => {
     setError(null);
     setIsResizing(true);
     setResizedUrl(null);
-    setPythonCode('');
 
     try {
         const resizePromise = new Promise<string>((resolve, reject) => {
@@ -122,14 +120,11 @@ const ImageResizer: React.FC<ImageResizerProps> = ({ language }) => {
 
         const dataUrl = await resizePromise;
         setResizedUrl(dataUrl);
-
-        const code = await generateResizeCode(originalFile.name, numWidth, numHeight);
-        setPythonCode(code);
+        setDownloadFilename(`resized-${originalFile?.name || 'image.png'}`);
 
     } catch (err: any) {
         setError(err.message || "An unexpected error occurred during resize.");
         setResizedUrl(null);
-        setPythonCode('');
     } finally {
         setIsResizing(false);
     }
@@ -143,23 +138,12 @@ const ImageResizer: React.FC<ImageResizerProps> = ({ language }) => {
 
     setError(null);
     setIsRemovingBg(true);
+    setResizedUrl(null);
 
     try {
-        // FIX: Pass originalFile.name to `removeBackground` so it can return a new File object.
-        const { dataUrl: newImageDataUrl, file: newFile } = await removeBackground(previewUrl, originalFile.name);
-        
-        setPreviewUrl(newImageDataUrl);
-        setOriginalFile(newFile);
-        
-        const img = new Image();
-        img.onload = () => {
-            setWidth(String(img.width));
-            setHeight(String(img.height));
-        };
-        img.src = newImageDataUrl;
-
-        setResizedUrl(null);
-        setPythonCode('');
+        const { dataUrl: newImageDataUrl } = await removeBackground(previewUrl);
+        setResizedUrl(newImageDataUrl);
+        setDownloadFilename(`bg-removed-${originalFile.name}`);
     } catch (error) {
         console.error(error);
         setError(t.errorRemoveBg);
@@ -176,23 +160,12 @@ const ImageResizer: React.FC<ImageResizerProps> = ({ language }) => {
 
     setError(null);
     setIsEnhancing(true);
+    setResizedUrl(null);
 
     try {
-        // FIX: Pass originalFile.name to `enhanceQuality` so it can return a new File object.
-        const { dataUrl: newImageDataUrl, file: newFile } = await enhanceQuality(previewUrl, originalFile.name);
-        
-        setPreviewUrl(newImageDataUrl);
-        setOriginalFile(newFile);
-        
-        const img = new Image();
-        img.onload = () => {
-            setWidth(String(img.width));
-            setHeight(String(img.height));
-        };
-        img.src = newImageDataUrl;
-
-        setResizedUrl(null);
-        setPythonCode('');
+        const { dataUrl: newImageDataUrl } = await enhanceQuality(previewUrl);
+        setResizedUrl(newImageDataUrl);
+        setDownloadFilename(`enhanced-${originalFile.name}`);
     } catch (error) {
         console.error(error);
         setError(t.errorEnhance);
@@ -208,7 +181,7 @@ const ImageResizer: React.FC<ImageResizerProps> = ({ language }) => {
       {error && <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-md mb-6 text-center">{error}</div>}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Left Column: Controls & Original Image */}
+        
         <div className="flex flex-col gap-6">
           <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
             <h2 className="text-lg font-semibold text-cyan-400 mb-4">{t.original}</h2>
@@ -291,7 +264,6 @@ const ImageResizer: React.FC<ImageResizerProps> = ({ language }) => {
           )}
         </div>
 
-        {/* Right Column: Resized Image & Code */}
         <div className="flex flex-col gap-6">
             <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 flex-grow flex flex-col">
                 <h2 className="text-lg font-semibold text-cyan-400 mb-4">{t.resized}</h2>
@@ -303,17 +275,11 @@ const ImageResizer: React.FC<ImageResizerProps> = ({ language }) => {
                     )}
                 </div>
                 {resizedUrl && (
-                    <a href={resizedUrl} download={`resized-${originalFile?.name || 'image.png'}`} className="mt-4 w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-4 rounded-md transition-all text-center">
+                    <a href={resizedUrl} download={downloadFilename} className="mt-4 w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-4 rounded-md transition-all text-center">
                         {t.download}
                     </a>
                 )}
             </div>
-            {pythonCode && (
-              <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
-                <h2 className="text-lg font-semibold text-cyan-400 mb-4">{t.pythonCode}</h2>
-                <CodeBlock code={pythonCode} copyText={t.copy} copiedText={t.copied} />
-              </div>
-            )}
         </div>
       </div>
     </div>
