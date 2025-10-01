@@ -1,6 +1,8 @@
 import { GoogleGenAI, Modality, GenerateContentResponse } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// 💡 التعديل هنا: استخدام import.meta.env.VITE_GEMINI_API_KEY
+// تذكر: يجب عليك ضبط متغير البيئة VITE_GEMINI_API_KEY في إعدادات Vercel.
+const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY }); 
 
 // Function to extract base64 data and mime type from a data URL
 function dataUrlToInfo(dataUrl: string): { base64: string; mimeType: string } {
