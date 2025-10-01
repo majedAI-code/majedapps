@@ -11,10 +11,8 @@
   "dependencies": {
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "@google/generative-ai": "latest",
     "@tensorflow/tfjs": "^4.20.0",
-    "@tensorflow-models/body-pix": "^2.2.0",
-    "upscaler": "^1.0.0"
+    "@tensorflow-models/body-pix": "^2.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
