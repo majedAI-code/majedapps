@@ -1,29 +1,36 @@
+import React from "react";
+import { Language } from "./types";
 
-import React from 'react';
-import { Language } from '../types';
-import { translations } from '../constants';
-
-interface HeaderProps {
+interface Props {
   language: Language;
-  setLanguage: (lang: Language) => void;
+  setLanguage: (l: Language) => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ language, setLanguage }) => {
-  const t = translations[language];
-
+const Header: React.FC<Props> = ({ language, setLanguage }) => {
   return (
-    <header className="bg-slate-800/50 backdrop-blur-sm p-4 border-b border-slate-700 flex justify-between items-center sticky top-0 z-10">
-      <h1 className="text-xl md:text-2xl font-bold text-cyan-400">{t.title}</h1>
-      <div className="relative">
-        <select
-          value={language}
-          onChange={(e) => setLanguage(e.target.value as Language)}
-          className="bg-slate-700 text-slate-200 border border-slate-600 rounded-md py-2 px-4 appearance-none focus:outline-none focus:ring-2 focus:ring-cyan-500 cursor-pointer"
-          aria-label={t.language}
+    <header className="p-4 flex items-center justify-between border-b border-slate-800">
+      <h1 className="text-cyan-400 font-semibold">تغيير وتعديل الصور</h1>
+      <div className="flex gap-2">
+        <button
+          onClick={() => setLanguage(Language.AR)}
+          className={`px-3 py-1 rounded-md text-sm border ${
+            language === Language.AR
+              ? "bg-cyan-600 border-cyan-500 text-white"
+              : "bg-slate-800 border-slate-700 text-slate-300"
+          }`}
         >
-          <option value={Language.EN}>{t.english}</option>
-          <option value={Language.AR}>{t.arabic}</option>
-        </select>
+          العربية
+        </button>
+        <button
+          onClick={() => setLanguage(Language.EN)}
+          className={`px-3 py-1 rounded-md text-sm border ${
+            language === Language.EN
+              ? "bg-cyan-600 border-cyan-500 text-white"
+              : "bg-slate-800 border-slate-700 text-slate-300"
+          }`}
+        >
+          English
+        </button>
       </div>
     </header>
   );
