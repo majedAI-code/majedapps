@@ -1,117 +1,153 @@
-// src/gemini.ts
-// ----------------------------------------------------
-// Gemini helpers for image background removal & enhance
-// ----------------------------------------------------
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI, Modality, GenerateContentResponse } from "@google/genai";
 
-// 1) API key from env (Vercel → Environment Variables)
-const apiKey = import.meta.env.VITE_API_KEY as string | undefined;
-if (!apiKey) {
-  throw new Error(
-    "VITE_API_KEY is missing. Add it in Vercel → Project → Settings → Environment Variables."
-  );
-}
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// 2) Create client + pick a model that accepts image inputs
-// جرّب "gemini-2.5-flash" إن تبي الأحدث، لكن سنبقيه افتراضيًا على 2.0-flash
-const genAI = new GoogleGenerativeAI(apiKey);
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-
-// ---------- small helpers ----------
+// Function to extract base64 data and mime type from a data URL
 function dataUrlToInfo(dataUrl: string): { base64: string; mimeType: string } {
-  const [meta, base64] = dataUrl.split(",");
-  if (!base64) throw new Error("Invalid data URL: missing base64 part.");
-  const mimeType = meta.match(/data:(.*?);base64/)?.[1] || "image/png";
-  return { base64: base64.trim(), mimeType };
+  const parts = dataUrl.split(',');
+  if (parts.length !== 2) throw new Error('Invalid data URL');
+  const mimeType = parts[0].match(/:(.*?);/)?.[1] || 'image/png';
+  const base64 = parts[1];
+  return { base64, mimeType };
 }
 
-function cleanBase64(text: string): string {
-  // أحيانًا النماذج ترجع النص بين ``` أو مع أسطر إضافية — ننظفه
-  let t = text.trim();
-  t = t.replace(/^```(png|image|base64)?/i, "").replace(/```$/i, "").trim();
-  // خذ أول سطر يشبه base64 إذا فيه شرح
-  const base64Match = t.match(/[A-Za-z0-9+/=]{100,}/);
-  return base64Match ? base64Match[0] : t;
-}
-
-function toDataUrlPNG(base64: string): string {
-  return `data:image/png;base64,${base64}`;
-}
-
-async function callModelWithImage(
-  imageDataUrl: string,
-  instruction: string
-): Promise<string> {
-  const { base64, mimeType } = dataUrlToInfo(imageDataUrl);
-
-  const result = await model.generateContent({
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { inlineData: { data: base64, mimeType } },
-          {
-            text:
-              `${instruction}\n\n` +
-              // نطلب صراحة إرجاع base64 فقط بدون أي زيادات
-              "Return ONLY the resulting PNG image as BASE64 string. " +
-              "Do NOT include markdown, code fences, JSON, or any extra text."
-          }
-        ]
-      }
-    ],
-    // مهم: لا نطلب image/png مباشرة لأن بعض الإصدارات لا تدعمها → 400
-    generationConfig: { responseMimeType: "text/plain" }
-  });
-
-  const text = (await result.response.text()) ?? "";
-  const b64 = cleanBase64(text);
-  if (!b64 || b64.length < 100) {
-    throw new Error("Model did not return a valid base64 image.");
-  }
-  return toDataUrlPNG(b64);
-}
-
-// ---------- Public API ----------
-
-/**
- * يزيل الخلفية ويُرجع DataURL للصورة الناتجة (PNG base64).
- * @param imageDataUrl data:image/*;base64,....
- */
+// FIX: Update function signature to accept a filename and return a File object.
 export async function removeBackground(
-  imageDataUrl: string
-): Promise<{ dataUrl: string }> {
+  imageDataUrl: string,
+  filename: string,
+): Promise<{ dataUrl: string; file: File }> {
   try {
-    const dataUrl = await callModelWithImage(
-      imageDataUrl,
-      "Remove the background from this image. Keep the subject only on a transparent background (PNG)."
-    );
-    return { dataUrl };
-  } catch (err: any) {
-    const msg =
-      err?.message ||
-      "Failed to remove background. Please try again with a different image.";
-    throw new Error(msg);
+    const { base64, mimeType } = dataUrlToInfo(imageDataUrl);
+
+    const response: GenerateContentResponse = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image-preview',
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              data: base64,
+              mimeType: mimeType,
+            },
+          },
+          {
+            text: 'Remove the background of this image. The output should be the subject on a transparent background.',
+          },
+        ],
+      },
+      config: {
+        responseModalities: [Modality.IMAGE, Modality.TEXT],
+      },
+    });
+    
+    const imagePart = response.candidates?.[0]?.content?.parts.find(
+      (part) => part.inlineData
+    )?.inlineData;
+
+    if (!imagePart) {
+      throw new Error("API did not return an image.");
+    }
+
+    const newMimeType = imagePart.mimeType;
+    const newBase64Data = imagePart.data;
+    const newImageDataUrl = `data:${newMimeType};base64,${newBase64Data}`;
+
+    const bstr = atob(newBase64Data);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+    }
+    const newFile = new File([u8arr], filename, { type: newMimeType });
+
+
+    return { dataUrl: newImageDataUrl, file: newFile };
+  } catch (error) {
+    console.error("Error removing background:", error);
+    throw new Error("Failed to process image with the API.");
   }
 }
 
-/**
- * يحسّن الجودة (إزالة تشويش/حدة/ترقية خفيفة) ويُرجع DataURL (PNG base64).
- * @param imageDataUrl data:image/*;base64,....
- */
+// FIX: Update function signature to accept a filename and return a File object.
 export async function enhanceQuality(
-  imageDataUrl: string
-): Promise<{ dataUrl: string }> {
+  imageDataUrl: string,
+  filename: string,
+): Promise<{ dataUrl: string; file: File }> {
   try {
-    const dataUrl = await callModelWithImage(
-      imageDataUrl,
-      "Enhance this image quality: denoise, sharpen edges, improve clarity, slightly upscale if beneficial, then output as high-quality PNG."
-    );
-    return { dataUrl };
-  } catch (err: any) {
-    const msg =
-      err?.message ||
-      "Failed to enhance image. Please try again with a different image.";
-    throw new Error(msg);
+    const { base64, mimeType } = dataUrlToInfo(imageDataUrl);
+
+    const response: GenerateContentResponse = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image-preview',
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              data: base64,
+              mimeType: mimeType,
+            },
+          },
+          {
+            text: 'Enhance the quality of this image, improving sharpness, clarity, and color balance. The output should be only the enhanced image.',
+          },
+        ],
+      },
+      config: {
+        responseModalities: [Modality.IMAGE, Modality.TEXT],
+      },
+    });
+    
+    const imagePart = response.candidates?.[0]?.content?.parts.find(
+      (part) => part.inlineData
+    )?.inlineData;
+
+    if (!imagePart) {
+      throw new Error("API did not return an image for enhancement.");
+    }
+
+    const newMimeType = imagePart.mimeType;
+    const newBase64Data = imagePart.data;
+    const newImageDataUrl = `data:${newMimeType};base64,${newBase64Data}`;
+
+    const bstr = atob(newBase64Data);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+    }
+    const newFile = new File([u8arr], filename, { type: newMimeType });
+
+    return { dataUrl: newImageDataUrl, file: newFile };
+  } catch (error) {
+    console.error("Error enhancing image:", error);
+    throw new Error("Failed to process image enhancement with the API.");
   }
+}
+
+// FIX: Add missing generateResizeCode function to resolve import error.
+export async function generateResizeCode(filename: string, width: number, height: number): Promise<string> {
+    try {
+        const prompt = `Generate a Python script that resizes an image.
+- The script should use the Pillow (PIL) library.
+- It should resize the image named "${filename}" to a width of ${width} pixels and a height of ${height} pixels.
+- The resized image should be saved with a new filename, like "resized_${filename}".
+- The code should be simple, well-commented, and ready to run.
+- Only provide the python code, no explanation or markdown.`;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+        });
+
+        let code = response.text;
+        // Clean up markdown formatting if present
+        if (code.startsWith('```python')) {
+            code = code.substring('```python'.length, code.length - 3).trim();
+        } else if (code.startsWith('```')) {
+             code = code.substring(3, code.length - 3).trim();
+        }
+
+        return code;
+    } catch (error) {
+        console.error("Error generating resize code:", error);
+        throw new Error("Failed to generate Python code with the API.");
+    }
 }
