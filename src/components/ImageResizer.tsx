@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback } from "react";
-import { Language } from "./types";
-import { translations } from "./constants";
-import { removeBackground, enhanceQuality } from "./gemini";
+import { Language } from "../types";
+import { translations } from "../constants";
+import { removeBackground, enhanceQuality, CLOUD_ENABLED } from "../gemini";
 
 interface Props {
   language: Language;
@@ -26,6 +26,7 @@ const ImageResizer: React.FC<Props> = ({ language }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const anyProcessing = isResizing || isRemovingBg || isEnhancing;
 
+  // اختيار/سحب ملف
   const handleFileChange = (file: File | null) => {
     if (file && file.type.startsWith("image/")) {
       setOriginalFile(file);
@@ -62,7 +63,6 @@ const ImageResizer: React.FC<Props> = ({ language }) => {
     const file = e.dataTransfer.files?.[0];
     handleFileChange(file || null);
   };
-
   const handleDragOver = (e: React.DragEvent<HTMLLabelElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -79,6 +79,7 @@ const ImageResizer: React.FC<Props> = ({ language }) => {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  // تغيير الحجم (محليًا على المتصفح)
   const handleResize = useCallback(async () => {
     if (!originalFile || !previewUrl) {
       setError(t.errorNoImage);
@@ -104,11 +105,11 @@ const ImageResizer: React.FC<Props> = ({ language }) => {
           canvas.width = numWidth;
           canvas.height = numHeight;
           const ctx = canvas.getContext("2d");
-          if (!ctx) return reject(new Error("Canvas not supported."));
+          if (!ctx) return reject(new Error("Canvas not supported"));
           ctx.drawImage(img, 0, 0, numWidth, numHeight);
           resolve(canvas.toDataURL(originalFile.type));
         };
-        img.onerror = () => reject(new Error("Failed to load image."));
+        img.onerror = () => reject(new Error("Failed to load image"));
       });
 
       setResizedUrl(dataUrl);
@@ -121,6 +122,7 @@ const ImageResizer: React.FC<Props> = ({ language }) => {
     }
   }, [originalFile, previewUrl, width, height, t]);
 
+  // إزالة الخلفية (سيتطلّب مفتاح خدمة خارجية؛ إن لم يوجد سنعرض رسالة)
   const handleRemoveBackground = async () => {
     if (!previewUrl || !originalFile) {
       setError(t.errorNoImage);
@@ -133,14 +135,14 @@ const ImageResizer: React.FC<Props> = ({ language }) => {
       const { dataUrl } = await removeBackground(previewUrl, originalFile.name);
       setResizedUrl(dataUrl);
       setDownloadFilename(`bg-removed-${originalFile.name}`);
-    } catch (e) {
-      console.error(e);
-      setError(t.errorRemoveBg);
+    } catch (e: any) {
+      setError(e?.code === "FEATURE_DISABLED" ? t.cloudFeatureDisabled : t.errorRemoveBg);
     } finally {
       setIsRemovingBg(false);
     }
   };
 
+  // تحسين الجودة (نفس فكرة إزالة الخلفية)
   const handleEnhanceQuality = async () => {
     if (!previewUrl || !originalFile) {
       setError(t.errorNoImage);
@@ -153,9 +155,8 @@ const ImageResizer: React.FC<Props> = ({ language }) => {
       const { dataUrl } = await enhanceQuality(previewUrl, originalFile.name);
       setResizedUrl(dataUrl);
       setDownloadFilename(`enhanced-${originalFile.name}`);
-    } catch (e) {
-      console.error(e);
-      setError(t.errorEnhance);
+    } catch (e: any) {
+      setError(e?.code === "FEATURE_DISABLED" ? t.cloudFeatureDisabled : t.errorEnhance);
     } finally {
       setIsEnhancing(false);
     }
@@ -170,7 +171,7 @@ const ImageResizer: React.FC<Props> = ({ language }) => {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* العمود الأيمن/الأيسر حسب اللغة: أصلية + أدوات */}
+        {/* الأصلية + أدوات */}
         <div className="flex flex-col gap-6">
           <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
             <h2 className="text-lg font-semibold text-cyan-400 mb-4">
@@ -239,10 +240,7 @@ const ImageResizer: React.FC<Props> = ({ language }) => {
             <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label
-                    htmlFor="width"
-                    className="block text-sm font-medium text-slate-400 mb-1"
-                  >
+                  <label htmlFor="width" className="block text-sm font-medium text-slate-400 mb-1">
                     {t.width}
                   </label>
                   <input
@@ -254,10 +252,7 @@ const ImageResizer: React.FC<Props> = ({ language }) => {
                   />
                 </div>
                 <div>
-                  <label
-                    htmlFor="height"
-                    className="block text-sm font-medium text-slate-400 mb-1"
-                  >
+                  <label htmlFor="height" className="block text-sm font-medium text-slate-400 mb-1">
                     {t.height}
                   </label>
                   <input
@@ -278,118 +273,64 @@ const ImageResizer: React.FC<Props> = ({ language }) => {
                 >
                   {isResizing ? (
                     <>
-                      <svg
-                        className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        ></circle>
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        ></path>
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
                       Processing...
                     </>
-                  ) : (
-                    t.resize
-                  )}
+                  ) : t.resize}
                 </button>
 
                 <button
                   onClick={handleRemoveBackground}
-                  disabled={anyProcessing}
+                  disabled={!CLOUD_ENABLED || anyProcessing}
+                  title={!CLOUD_ENABLED ? t.cloudFeatureHint : ""}
                   className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-4 rounded-md transition-all flex items-center justify-center disabled:bg-slate-600 disabled:cursor-not-allowed"
                 >
                   {isRemovingBg ? (
                     <>
-                      <svg
-                        className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        ></circle>
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        ></path>
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
                       {t.removing}
                     </>
-                  ) : (
-                    t.removeBackground
-                  )}
+                  ) : t.removeBackground}
                 </button>
 
                 <button
                   onClick={handleEnhanceQuality}
-                  disabled={anyProcessing}
+                  disabled={!CLOUD_ENABLED || anyProcessing}
+                  title={!CLOUD_ENABLED ? t.cloudFeatureHint : ""}
                   className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-md transition-all flex items-center justify-center disabled:bg-slate-600 disabled:cursor-not-allowed"
                 >
                   {isEnhancing ? (
                     <>
-                      <svg
-                        className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        ></circle>
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        ></path>
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
                       {t.enhancing}
                     </>
-                  ) : (
-                    t.enhanceQuality
-                  )}
+                  ) : t.enhanceQuality}
                 </button>
               </div>
+
+              {!CLOUD_ENABLED && (
+                <p className="text-xs text-slate-400 mt-3">{t.cloudFeatureHint}</p>
+              )}
             </div>
           )}
         </div>
 
-        {/* العمود الآخر: المعاينة / التحميل */}
+        {/* المعاينة/التحميل */}
         <div className="flex flex-col gap-6">
           <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 flex-grow flex flex-col">
-            <h2 className="text-lg font-semibold text-cyan-400 mb-4">
-              {t.resized}
-            </h2>
+            <h2 className="text-lg font-semibold text-cyan-400 mb-4">{t.resized}</h2>
             <div className="flex-grow flex items-center justify-center w-full min-h-[20rem] bg-black/20 p-2 border border-slate-700 rounded-lg">
               {resizedUrl ? (
-                <img
-                  src={resizedUrl}
-                  alt="Resized"
-                  className="w-full h-auto max-h-80 object-contain rounded-md"
-                />
+                <img src={resizedUrl} alt="Resized" className="w-full h-auto max-h-80 object-contain rounded-md" />
               ) : (
                 <p className="text-slate-500">{t.noResizedImage}</p>
               )}
