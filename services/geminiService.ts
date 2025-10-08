@@ -1,0 +1,71 @@
+
+import { GoogleGenAI, Modality } from '@google/genai';
+import { fileToBase64 } from '../utils/fileUtils';
+
+const API_KEY = process.env.API_KEY;
+if (!API_KEY) {
+    console.error("API_KEY environment variable not set.");
+}
+
+const ai = new GoogleGenAI({ apiKey: API_KEY! });
+const model = ai.models;
+
+const processImageWithPrompt = async (imageFile: File, prompt: string): Promise<string> => {
+    if (!API_KEY) {
+        throw new Error("API Key is not configured. Cannot process image with AI.");
+    }
+    const { base64, mimeType } = await fileToBase64(imageFile);
+
+    try {
+        const response = await model.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: {
+                parts: [
+                    {
+                        inlineData: {
+                            data: base64,
+                            mimeType: mimeType,
+                        },
+                    },
+                    {
+                        text: prompt,
+                    },
+                ],
+            },
+            config: {
+                responseModalities: [Modality.IMAGE, Modality.TEXT],
+            },
+        });
+
+        const imagePart = response.candidates?.[0]?.content?.parts.find(part => part.inlineData);
+
+        if (imagePart && imagePart.inlineData) {
+            const base64ImageBytes = imagePart.inlineData.data;
+            const outputMimeType = imagePart.inlineData.mimeType;
+            return `data:${outputMimeType};base64,${base64ImageBytes}`;
+        } else {
+            const textResponse = response.text;
+            if (textResponse && textResponse.toLowerCase().includes("cannot")) {
+                 throw new Error(`AI could not process image: ${textResponse}`);
+            }
+            throw new Error("AI processing failed: No image data in response.");
+        }
+
+    } catch (error) {
+        console.error("Gemini API call failed:", error);
+        if(error instanceof Error && error.message.includes('429')){
+             throw new Error("API rate limit exceeded. Please try again later.");
+        }
+        throw new Error("Failed to communicate with the AI model.");
+    }
+};
+
+export const removeBackground = async (imageFile: File): Promise<string> => {
+    const prompt = "Remove the background from this image. The main subject should be perfectly preserved. The output must be a PNG with a transparent background.";
+    return processImageWithPrompt(imageFile, prompt);
+};
+
+export const enhanceImage = async (imageFile: File): Promise<string> => {
+    const prompt = "Enhance the quality of this image. Improve sharpness, clarity, lighting, and color balance for a professional look. Do not add, remove, or change any elements in the image.";
+    return processImageWithPrompt(imageFile, prompt);
+};
