@@ -36,7 +36,7 @@ const App: React.FC = () => {
     };
 
 
-    const handleProcessing = useCallback(async (settings: { width?: number; height?: number; keepAspectRatio?: boolean; apiKey: string; }) => {
+    const handleProcessing = useCallback(async (settings: { width?: number; height?: number; keepAspectRatio?: boolean; }) => {
         const selectedImages = images.filter(img => img.isSelected);
         if (selectedImages.length === 0) {
             alert("الرجاء تحديد صورة واحدة على الأقل.");
@@ -58,10 +58,10 @@ const App: React.FC = () => {
                         processedUrl = await resizeImageOnCanvas(image.file, settings.width, settings.height, settings.keepAspectRatio ?? true);
                         break;
                     case EditMode.REMOVE_BG:
-                        processedUrl = await removeBackground(image.file, settings.apiKey);
+                        processedUrl = await removeBackground(image.file);
                         break;
                     case EditMode.ENHANCE:
-                        processedUrl = await enhanceImage(image.file, settings.apiKey);
+                        processedUrl = await enhanceImage(image.file);
                         break;
                     default:
                         throw new Error("وضع التعديل غير معروف");

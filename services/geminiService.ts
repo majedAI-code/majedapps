@@ -1,17 +1,18 @@
 import { GoogleGenAI, Modality } from '@google/genai';
 import { fileToBase64 } from '../utils/fileUtils';
 
-const getAiClient = (apiKey: string): GoogleGenAI => {
+const getAiClient = (): GoogleGenAI => {
+    const apiKey = process.env.API_KEY;
     if (!apiKey) {
-        throw new Error("API Key is not provided. Cannot process image with AI.");
+        throw new Error("API Key is not configured. Cannot process image with AI.");
     }
     return new GoogleGenAI({ apiKey });
 };
 
 
-const processImageWithPrompt = async (imageFile: File, prompt: string, apiKey: string): Promise<string> => {
+const processImageWithPrompt = async (imageFile: File, prompt: string): Promise<string> => {
     try {
-        const aiClient = getAiClient(apiKey);
+        const aiClient = getAiClient();
         const { base64, mimeType } = await fileToBase64(imageFile);
 
         const response = await aiClient.models.generateContent({
@@ -60,12 +61,12 @@ const processImageWithPrompt = async (imageFile: File, prompt: string, apiKey: s
     }
 };
 
-export const removeBackground = async (imageFile: File, apiKey: string): Promise<string> => {
+export const removeBackground = async (imageFile: File): Promise<string> => {
     const prompt = "Remove the background from this image. The main subject should be perfectly preserved. The output must be a PNG with a transparent background.";
-    return processImageWithPrompt(imageFile, prompt, apiKey);
+    return processImageWithPrompt(imageFile, prompt);
 };
 
-export const enhanceImage = async (imageFile: File, apiKey: string): Promise<string> => {
+export const enhanceImage = async (imageFile: File): Promise<string> => {
     const prompt = "Enhance the quality of this image. Improve sharpness, clarity, lighting, and color balance for a professional look. Do not add, remove, or change any elements in the image.";
-    return processImageWithPrompt(imageFile, prompt, apiKey);
+    return processImageWithPrompt(imageFile, prompt);
 };
