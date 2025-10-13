@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback } from 'react';
 import { UploadIcon } from './Icon';
 
@@ -41,7 +40,7 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({ onFilesChange }) => {
             onDragLeave={handleDrag}
             onDragOver={handleDrag}
             onDrop={handleDrop}
-            className={`relative flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-xl cursor-pointer transition-colors duration-300 ${isDragging ? 'border-purple-500 bg-gray-700/50' : 'border-gray-600 hover:border-purple-500 hover:bg-gray-800/50'}`}
+            className={`relative flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-xl cursor-pointer transition-all duration-300 backdrop-blur-lg ${isDragging ? 'border-purple-400 bg-purple-500/10' : 'border-slate-800/50 bg-black/20 hover:border-purple-400/50'}`}
         >
             <input
                 type="file"
@@ -52,10 +51,10 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({ onFilesChange }) => {
                 onChange={handleChange}
             />
             <label htmlFor="file-upload" className="flex flex-col items-center justify-center cursor-pointer text-center">
-                <UploadIcon className="w-12 h-12 text-gray-500 mb-4" />
-                <p className="text-lg font-semibold text-gray-300">اسحب وأفلت الصور هنا</p>
-                <p className="text-gray-400">أو <span className="font-bold text-purple-400">انقر للاختيار</span></p>
-                <p className="text-xs text-gray-500 mt-2">يدعم PNG, JPG, WEBP</p>
+                <UploadIcon className="w-12 h-12 text-slate-500 mb-4" />
+                <p className="text-lg font-semibold text-slate-300">اسحب وأفلت الصور هنا</p>
+                <p className="text-slate-400">أو <span className="font-bold text-purple-400">انقر للاختيار</span></p>
+                <p className="text-xs text-slate-500 mt-2">يدعم PNG, JPG, WEBP</p>
             </label>
         </div>
     );

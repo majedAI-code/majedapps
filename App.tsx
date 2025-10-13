@@ -5,6 +5,7 @@ import { ControlPanel } from './components/ControlPanel';
 import { ImageGrid } from './components/ImageGrid';
 import { resizeImageOnCanvas } from './utils/fileUtils';
 import { enhanceImage, removeBackground } from './services/geminiService';
+import { LogoIcon, StarIcon } from './components/Icon';
 
 const App: React.FC = () => {
     const [images, setImages] = useState<ImageFile[]>([]);
@@ -30,7 +31,7 @@ const App: React.FC = () => {
     };
     
     const toggleSelectAll = () => {
-        const areAllSelected = images.every(img => img.isSelected);
+        const areAllSelected = images.every(img => img.isSelected) && images.length > 0;
         setImages(prev => prev.map(img => ({ ...img, isSelected: !areAllSelected })));
     };
 
@@ -102,23 +103,30 @@ const App: React.FC = () => {
 
             imagesToDelete.forEach(img => {
                 URL.revokeObjectURL(img.originalUrl);
+                if (img.processedUrl) URL.revokeObjectURL(img.processedUrl);
             });
             setImages(imagesToKeep);
         } else {
             // If no images are selected, clear all images
-            images.forEach(img => URL.revokeObjectURL(img.originalUrl));
+            images.forEach(img => {
+                 URL.revokeObjectURL(img.originalUrl);
+                 if (img.processedUrl) URL.revokeObjectURL(img.processedUrl);
+            });
             setImages([]);
         }
     };
 
     return (
-        <div className="min-h-screen bg-gray-900 text-gray-200 flex flex-col p-4 sm:p-6 lg:p-8 font-['Cairo']">
-            <header className="text-center mb-8">
-                <h1 className="text-4xl sm:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-indigo-600 py-2">
-                    محرر الصور بالذكاء الاصطناعي
-                </h1>
-                <p className="mt-2 text-lg text-gray-400">
-                    عدّل صورك دفعة واحدة: تغيير الحجم، إزالة الخلفية، وتحسين الجودة.
+        <div className="min-h-screen flex flex-col p-6 sm:p-8 lg:p-12 font-['Cairo']">
+            <header className="text-center mb-10">
+                 <div className="flex justify-center items-center gap-3 mb-2">
+                    <LogoIcon className="w-10 h-10 text-slate-300" />
+                    <h1 className="text-4xl sm:text-5xl font-bold text-slate-100 py-2">
+                        محرر الصور بالذكاء الاصطناعي
+                    </h1>
+                </div>
+                <p className="mt-2 text-lg text-slate-400 max-w-2xl mx-auto">
+                    ارفع صورك، اختر التعديل الذي تريده، وقم بمعالجتها جميعًا بنقرة واحدة.
                 </p>
             </header>
 
@@ -137,12 +145,13 @@ const App: React.FC = () => {
                         />
                     )}
                 </aside>
-                <section className="flex-grow w-full lg:w-2/3 xl:w-3/4 bg-gray-900/50 rounded-xl p-4 border border-gray-700/50">
+                <section className="flex-grow w-full lg:w-2/3 xl:w-3/4 bg-slate-900/20 rounded-xl p-4 border border-slate-800/50 backdrop-blur-lg">
                     <ImageGrid images={images} onToggleSelect={toggleImageSelection} />
                 </section>
             </main>
-            <footer className="fixed bottom-4 right-4 text-xs text-white opacity-50">
-                by majed almalki
+             <footer className="w-full flex justify-between items-center mt-12 text-sm text-slate-600 px-4">
+                <span>by majed almalki</span>
+                <StarIcon className="w-5 h-5" />
             </footer>
         </div>
     );
