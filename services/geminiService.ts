@@ -2,22 +2,33 @@
 import { GoogleGenAI, Modality } from '@google/genai';
 import { fileToBase64 } from '../utils/fileUtils';
 
-const API_KEY = process.env.API_KEY;
-if (!API_KEY) {
-    console.error("API_KEY environment variable not set.");
-}
+// Singleton instance of the AI client, initialized lazily.
+let ai: GoogleGenAI | null = null;
 
-const ai = new GoogleGenAI({ apiKey: API_KEY! });
-const model = ai.models;
+const getAiClient = (): GoogleGenAI => {
+    if (ai) {
+        return ai;
+    }
 
-const processImageWithPrompt = async (imageFile: File, prompt: string): Promise<string> => {
-    if (!API_KEY) {
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+        console.error("API_KEY environment variable not set.");
+        // This error will be caught by the handleProcessing function in App.tsx
+        // and displayed on the corresponding image card.
         throw new Error("API Key is not configured. Cannot process image with AI.");
     }
-    const { base64, mimeType } = await fileToBase64(imageFile);
 
+    ai = new GoogleGenAI({ apiKey });
+    return ai;
+};
+
+
+const processImageWithPrompt = async (imageFile: File, prompt: string): Promise<string> => {
     try {
-        const response = await model.generateContent({
+        const aiClient = getAiClient();
+        const { base64, mimeType } = await fileToBase64(imageFile);
+
+        const response = await aiClient.models.generateContent({
             model: 'gemini-2.5-flash-image',
             contents: {
                 parts: [
@@ -53,8 +64,11 @@ const processImageWithPrompt = async (imageFile: File, prompt: string): Promise<
 
     } catch (error) {
         console.error("Gemini API call failed:", error);
-        if(error instanceof Error && error.message.includes('429')){
-             throw new Error("API rate limit exceeded. Please try again later.");
+        if(error instanceof Error) {
+            if (error.message.includes('429')){
+                 throw new Error("API rate limit exceeded. Please try again later.");
+            }
+            throw error; // Rethrow to be handled by the caller
         }
         throw new Error("Failed to communicate with the AI model.");
     }
