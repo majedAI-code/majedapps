@@ -1,31 +1,17 @@
-
 import { GoogleGenAI, Modality } from '@google/genai';
 import { fileToBase64 } from '../utils/fileUtils';
 
-// Singleton instance of the AI client, initialized lazily.
-let ai: GoogleGenAI | null = null;
-
-const getAiClient = (): GoogleGenAI => {
-    if (ai) {
-        return ai;
-    }
-
-    const apiKey = process.env.API_KEY;
+const getAiClient = (apiKey: string): GoogleGenAI => {
     if (!apiKey) {
-        console.error("API_KEY environment variable not set.");
-        // This error will be caught by the handleProcessing function in App.tsx
-        // and displayed on the corresponding image card.
-        throw new Error("API Key is not configured. Cannot process image with AI.");
+        throw new Error("API Key is not provided. Cannot process image with AI.");
     }
-
-    ai = new GoogleGenAI({ apiKey });
-    return ai;
+    return new GoogleGenAI({ apiKey });
 };
 
 
-const processImageWithPrompt = async (imageFile: File, prompt: string): Promise<string> => {
+const processImageWithPrompt = async (imageFile: File, prompt: string, apiKey: string): Promise<string> => {
     try {
-        const aiClient = getAiClient();
+        const aiClient = getAiClient(apiKey);
         const { base64, mimeType } = await fileToBase64(imageFile);
 
         const response = await aiClient.models.generateContent({
@@ -74,12 +60,12 @@ const processImageWithPrompt = async (imageFile: File, prompt: string): Promise<
     }
 };
 
-export const removeBackground = async (imageFile: File): Promise<string> => {
+export const removeBackground = async (imageFile: File, apiKey: string): Promise<string> => {
     const prompt = "Remove the background from this image. The main subject should be perfectly preserved. The output must be a PNG with a transparent background.";
-    return processImageWithPrompt(imageFile, prompt);
+    return processImageWithPrompt(imageFile, prompt, apiKey);
 };
 
-export const enhanceImage = async (imageFile: File): Promise<string> => {
+export const enhanceImage = async (imageFile: File, apiKey: string): Promise<string> => {
     const prompt = "Enhance the quality of this image. Improve sharpness, clarity, lighting, and color balance for a professional look. Do not add, remove, or change any elements in the image.";
-    return processImageWithPrompt(imageFile, prompt);
+    return processImageWithPrompt(imageFile, prompt, apiKey);
 };
