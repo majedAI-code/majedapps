@@ -1,10 +1,12 @@
 import { GoogleGenAI, Modality } from '@google/genai';
 import { fileToBase64 } from '../utils/fileUtils';
 
+// Fix: Use process.env.API_KEY to get the API key as per the coding guidelines.
 const getAiClient = (): GoogleGenAI => {
+    // The API key must be obtained exclusively from the environment variable `process.env.API_KEY`.
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
-        throw new Error("لم يتم تكوين مفتاح API. لا يمكن معالجة الصورة.");
+        throw new Error("مفتاح API غير موجود. تأكد من أن متغير البيئة API_KEY مهيأ بشكل صحيح.");
     }
     return new GoogleGenAI({ apiKey });
 };
